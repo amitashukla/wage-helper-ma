@@ -1,0 +1,25 @@
+# Environment
+.env
+
+# Data (raw files may contain PII)
+data/raw/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Deployment
+.vercel/
+
+# OS
+.DS_Store

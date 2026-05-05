@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+psycopg2-binary
+sqlalchemy
+rapidfuzz
+sentence-transformers
+numpy
+pandas
+pdfplumber
+httpx
+playwright
+python-dotenv
+slowapi
