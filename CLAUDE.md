@@ -7,7 +7,7 @@ MA Wage Theft Chatbot. RAG pipeline over MA Chapter 149 statutes + AG enforcemen
 - Frontend: React + Vite + TypeScript → Vercel
 - Backend: FastAPI + Python → Railway (always-on, no cold starts)
 - DB: Railway Postgres (complaints + enforcements tables)
-- Embeddings: `sentence-transformers/all-MiniLM-L6-v2`, flat .npy files (versioned)
+- Embeddings: `all-MiniLM-L6-v2` via fastembed (ONNX, no PyTorch); corpus pre-computed as flat .npy files (versioned)
 - LLM: Groq, `llama-3.3-70b-versatile`
 - Fuzzy match: RapidFuzz against pre-built employer index
 - Session state: client-owned, sent with every request, not persisted server-side
@@ -30,5 +30,15 @@ MA Wage Theft Chatbot. RAG pipeline over MA Chapter 149 statutes + AG enforcemen
 - Vercel: linked to `amitas-projects-900fa9ea/frontend`
 - Backend internal DB URL (for Railway service): `postgresql://postgres:...@postgres-bzl.railway.internal:5432/railway`
 
+## Deployment URLs
+- Backend: https://backend-production-58e7.up.railway.app
+- Frontend: https://frontend-five-rust-wlzmozxmd5.vercel.app
+- CORS: `ALLOWED_ORIGINS` env var on Railway restricts to the Vercel frontend domains
+
 ## Phase status
-- Phase 0: complete (Steps 0.3–0.5 done)
+- Phase 0: complete
+- Phase 1: complete (statutes, publications, complaints, enforcements, embeddings)
+- Phase 2: complete (statute search, violation mapper, complaint lookup)
+- Phase 3: complete (RAG orchestrator, LLM client, input guard, citation verifier, session schema)
+- Phase 4: complete (React chat UI with all components)
+- Phase 5: deployed to Railway (backend) + Vercel (frontend)
