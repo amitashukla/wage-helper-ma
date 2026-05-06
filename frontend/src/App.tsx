@@ -1,122 +1,118 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useState } from 'react';
+import type { ChatMessage, ChatResponse } from './types';
+import { useSession } from './hooks/useSession';
+import { ChatWindow } from './components/layout/ChatWindow';
+import { Sidebar } from './components/layout/Sidebar';
+import { InputBar } from './components/input/InputBar';
+import { InputHints } from './components/input/InputHints';
+import { SessionPill } from './components/session/SessionPill';
+import './App.css';
 
-function App() {
-  const [count, setCount] = useState(0)
+const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+function buildSessionTags(session: ReturnType<typeof useSession>['sessionProfile']): string[] {
+  const tags: string[] = [];
+  if (session.employer) tags.push(session.employer);
+  if (session.employment_type) tags.push(session.employment_type);
+  if (session.violation_categories.length) tags.push(...session.violation_categories.slice(0, 2));
+  return tags;
 }
 
-export default App
+export default function App() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [pendingInput, setPendingInput] = useState('');
+  const [suggestedSteps, setSuggestedSteps] = useState<string[]>([]);
+  const { sessionProfile, updateSessionProfile } = useSession();
+
+  const hasSentMessage = messages.length > 0;
+
+  async function sendMessage(text: string) {
+    if (!text.trim() || isLoading) return;
+
+    const userMsg: ChatMessage = { role: 'user', content: text };
+    setMessages((prev) => [...prev, userMsg]);
+    setIsLoading(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, session: sessionProfile }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data: ChatResponse = await res.json();
+
+      const botMsg: ChatMessage = {
+        role: 'assistant',
+        content: data.answer,
+        citationBlocks: data.citation_blocks,
+        violationCategory: data.violation_category,
+        employerMatches: data.employer_matches,
+        confidenceFlag: data.confidence_flag,
+      };
+
+      setMessages((prev) => [...prev, botMsg]);
+      updateSessionProfile(data.session);
+
+      // Derive suggested follow-up questions from violation category
+      if (data.violation_category && data.violation_category !== 'unknown') {
+        setSuggestedSteps([
+          `What evidence should I gather for a ${data.violation_category}?`,
+          `How do I file a complaint about ${data.violation_category}?`,
+          'What are the deadlines for filing a wage claim in Massachusetts?',
+        ]);
+      }
+    } catch (err) {
+      const errorMsg: ChatMessage = {
+        role: 'assistant',
+        content:
+          'Something went wrong. Please try again, or visit the free ' +
+          'MA Wage Theft Legal Clinic for direct help.',
+        confidenceFlag: 'fallback',
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const sessionTags = buildSessionTags(sessionProfile);
+
+  return (
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="header-inner">
+          <span className="header-logo">⚖️</span>
+          <h1 className="header-title">MA Wage Rights Helper</h1>
+          <span className="header-badge">Massachusetts workers only</span>
+        </div>
+      </header>
+
+      {sessionTags.length > 0 && <SessionPill tags={sessionTags} />}
+
+      <div className="app-body">
+        <main className="main-panel">
+          <ChatWindow messages={messages} isLoading={isLoading} />
+
+          {!hasSentMessage && (
+            <InputHints onSelect={(p) => { setPendingInput(p); }} />
+          )}
+
+          <InputBar
+            onSend={sendMessage}
+            isLoading={isLoading}
+            pendingMessage={pendingInput}
+            onPendingChange={setPendingInput}
+          />
+        </main>
+
+        <Sidebar suggestedSteps={suggestedSteps} onStepSelect={sendMessage} />
+      </div>
+    </div>
+  );
+}

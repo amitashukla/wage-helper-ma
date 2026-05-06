@@ -1,6 +1,6 @@
 """SQLAlchemy models for the wage-helper-ma database."""
 
-from sqlalchemy import Column, Integer, String, Date, Numeric, Text, ARRAY
+from sqlalchemy import Column, Integer, String, Date, Numeric, Text, ARRAY  # noqa: F401
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -13,22 +13,22 @@ class CivilEnforcement(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     date_issued = Column(Date, nullable=True)
-    employer_raw = Column(String(500), nullable=False)
-    employer_normalized = Column(String(500), nullable=False, index=True)
-    dba = Column(String(500), nullable=True)
-    individual = Column(String(300), nullable=True)
-    business_city = Column(String(200), nullable=True)
-    business_state = Column(String(10), nullable=True)
-    business_zipcode = Column(String(20), nullable=True)
-    citation_number = Column(String(100), nullable=True)
-    violation_code = Column(String(100), nullable=True)
+    employer_raw = Column(Text, nullable=False)
+    employer_normalized = Column(Text, nullable=False, index=True)
+    dba = Column(Text, nullable=True)
+    individual = Column(Text, nullable=True)
+    business_city = Column(Text, nullable=True)
+    business_state = Column(Text, nullable=True)
+    business_zipcode = Column(Text, nullable=True)
+    citation_number = Column(Text, nullable=True)
+    violation_code = Column(Text, nullable=True)
     violation_description = Column(Text, nullable=True)
-    violation_category = Column(String(200), nullable=True, index=True)
-    intent = Column(String(100), nullable=True)
+    violation_category = Column(Text, nullable=True, index=True)
+    intent = Column(Text, nullable=True)
     total_assessed = Column(Numeric(12, 2), nullable=True)
-    case_paid_in_full = Column(String(50), nullable=True)
+    case_paid_in_full = Column(Text, nullable=True)
     num_employees = Column(Integer, nullable=True)
-    industry = Column(String(200), nullable=True)
+    industry = Column(Text, nullable=True)
 
     def __repr__(self) -> str:
         return (
@@ -49,15 +49,15 @@ class Complaint(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     received_date = Column(Date, nullable=True)
-    employer_name = Column(String(500), nullable=False)
-    employer_name_normalized = Column(String(500), nullable=False, index=True)
-    employer_city = Column(String(200), nullable=True)
-    employer_state = Column(String(10), nullable=True)
-    employer_zip = Column(String(20), nullable=True)
-    industry = Column(String(200), nullable=True)
-    complaint_type = Column(String(200), nullable=True)
-    violation_types = Column(ARRAY(String), nullable=True)  # list of active violation flags
-    number = Column(String(50), nullable=True)  # case/reference number
+    employer_name = Column(Text, nullable=True)
+    employer_name_normalized = Column(Text, nullable=True, index=True)
+    employer_city = Column(Text, nullable=True)
+    employer_state = Column(Text, nullable=True)
+    employer_zip = Column(Text, nullable=True)
+    industry = Column(Text, nullable=True)
+    complaint_type = Column(Text, nullable=True)
+    violation_types = Column(ARRAY(String), nullable=True)
+    number = Column(Text, nullable=True)
 
     def __repr__(self) -> str:
         return f"<Complaint(id={self.id}, employer={self.employer_name!r}, date={self.received_date})>"

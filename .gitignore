@@ -3,6 +3,7 @@
 
 # Data (raw files may contain PII)
 data/raw/
+data/publications/
 
 # Python
 __pycache__/

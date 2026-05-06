@@ -1,0 +1,55 @@
+# Few-shot examples for MA Wage Theft chatbot
+# Format: alternating USER / ASSISTANT blocks, separated by blank lines.
+# These are prepended to the conversation before the live user message.
+
+USER: My employer never pays me for the extra hours I work past 40 hours a week. Is that legal?
+
+ASSISTANT: No, that is not legal in Massachusetts. Under M.G.L. c. 151, § 1A, most employees who work more than 40 hours in a single workweek must be paid at least 1.5 times their regular hourly rate for every hour beyond 40. This is called overtime pay.
+
+There are some exceptions — for example, certain salaried managers or employees in specific industries may not qualify — but the majority of hourly workers are covered.
+
+If your employer is not paying you overtime, you have the right to file a wage complaint with the Massachusetts Attorney General's Office. They can investigate and help recover the wages you are owed. You can file a complaint at www.mass.gov/ag/workplace-rights or call (617) 727-3465.
+
+For advice specific to your situation, speaking with a lawyer is a good next step.
+
+---
+
+USER: I worked two weeks and my employer never gave me a pay stub. Do I have a right to one?
+
+ASSISTANT: Yes, Massachusetts law gives you the right to a written record of your wages each pay period. Under M.G.L. c. 149, § 148, employers are required to provide each employee with a statement of earnings at the time wages are paid. This statement should show your gross pay, any deductions, and your net pay.
+
+Failing to provide pay stubs is a violation of the Massachusetts Wage Act. If your employer is not giving you pay stubs, you can file a complaint with the Attorney General's Office. The AG's Wage and Hour Division handles these complaints and can require your employer to correct the practice.
+
+If you also believe your actual pay amount is wrong, you can raise both issues in the same complaint.
+
+---
+
+USER: I think I am being paid less than minimum wage. What is the minimum wage in Massachusetts, and what can I do?
+
+ASSISTANT: As of 2025, the Massachusetts minimum wage is $15.00 per hour for most workers, under M.G.L. c. 151, § 1. Tipped employees (such as restaurant servers) have a lower base cash wage of $6.75 per hour, but their tips must bring their total hourly earnings up to at least $15.00 — if they do not, the employer must make up the difference.
+
+If you are being paid less than the applicable minimum wage, your employer is violating Massachusetts law. You have the right to recover the unpaid difference, and in some cases you may be entitled to three times the amount owed (triple damages) plus attorney's fees under M.G.L. c. 149, § 150.
+
+You can report this violation to the Massachusetts Attorney General's Office by filing a wage complaint online at www.mass.gov/ag/workplace-rights. The AG's office can investigate and help you recover what you are owed. Consulting a wage and hour attorney can also help you understand your options.
+
+---
+
+USER: I complained to my manager about not getting paid correctly, and now I think they are cutting my hours on purpose to punish me. Is that allowed?
+
+ASSISTANT: No, that is not allowed. Massachusetts law protects workers from retaliation for asserting their wage rights. Under M.G.L. c. 149, § 148A, an employer cannot punish you — by cutting hours, demoting you, firing you, or taking any other adverse action — because you complained about unpaid wages or a wage law violation.
+
+Retaliation is taken seriously. If an employer is found to have retaliated against you, you may be entitled to reinstatement, lost wages, and additional damages.
+
+If you believe your hours are being cut in retaliation for raising a pay concern, document everything you can: keep records of your old and new schedules, any communications with your employer, and the timeline of events. Then file a retaliation complaint with the Massachusetts Attorney General's Office at www.mass.gov/ag/workplace-rights.
+
+Speaking with a worker rights attorney as soon as possible is strongly recommended in retaliation situations, as timing can matter for your claim.
+
+---
+
+USER: My employer does not give me a meal break during my 8-hour shift. Am I supposed to get one?
+
+ASSISTANT: Yes. Under M.G.L. c. 149, § 100, Massachusetts employers must provide a 30-minute meal break to any employee who works more than six hours in a day. This break must be duty-free — meaning you should not be working or required to stay at your workstation during that time.
+
+If your employer requires you to work through your meal break, or does not allow you to take one, that is a violation of Massachusetts law. In that case, you should be paid for that time.
+
+You can report a meal break violation to the Massachusetts Attorney General's Office by filing a complaint at www.mass.gov/ag/workplace-rights. The AG's Wage and Hour Division investigates these complaints and can take action against employers who deny workers their legally required breaks.

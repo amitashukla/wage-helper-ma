@@ -23,5 +23,12 @@ MA Wage Theft Chatbot. RAG pipeline over MA Chapter 149 statutes + AG enforcemen
 - Update this file with new context as implementation progresses
 - Do not repeat content already in `implementation.md`, `arch_plan.md`, or `decisions.md`
 
+## Infrastructure
+- Railway project: `fulfilling-heart` (project ID: 5dd1665c-21f8-4777-bc20-1cda4914c6bb)
+- Railway Postgres service: `Postgres-bz_L` — public URL in `.env` as `DATABASE_URL`
+- Railway backend service: `backend` — env vars set; **GitHub auto-deploy link must be done manually in Railway dashboard** (CLI OAuth scope issue)
+- Vercel: linked to `amitas-projects-900fa9ea/frontend`
+- Backend internal DB URL (for Railway service): `postgresql://postgres:...@postgres-bzl.railway.internal:5432/railway`
+
 ## Phase status
-- Phase 0 Step 0.3: in progress (README, .gitignore, .env.example, CLAUDE.md created)
+- Phase 0: complete (Steps 0.3–0.5 done)
