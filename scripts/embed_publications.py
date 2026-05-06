@@ -23,6 +23,8 @@ import pdfplumber
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
+from download_publications import DOCUMENTS
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -64,6 +66,17 @@ LEGAL_TAGS = [
     "personnel records",
     "vacation pay",
 ]
+
+
+def title_to_slug(title: str) -> str:
+    """Convert a document title to a filesystem-safe slug."""
+    slug = title.lower()
+    for ch in ["&", ":", "'", "’", ",", ".", "?", "/"]:
+        slug = slug.replace(ch, "")
+    slug = slug.replace(" ", "-")
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug.strip("-")
 
 
 def approx_token_count(text: str) -> int:
@@ -222,18 +235,41 @@ def tag_chunk(text: str) -> list[str]:
     return [tag for tag in LEGAL_TAGS if tag in text_lower]
 
 
-def main():
-    if not MANIFEST_FILE.exists():
-        logger.error(
-            f"Manifest not found: {MANIFEST_FILE}\n"
-            "Run download_publications.py first."
+def build_manifest_from_documents() -> list[dict]:
+    """Build publication metadata from DOCUMENTS when manifest is missing/empty."""
+    manifest = []
+    for doc in DOCUMENTS:
+        slug = title_to_slug(doc["title"])
+        manifest.append(
+            {
+                "slug": slug,
+                "title": doc["title"],
+                "category": doc["category"],
+                "url": doc["url"],
+            }
         )
-        sys.exit(1)
+    return manifest
 
-    with open(MANIFEST_FILE, "r", encoding="utf-8") as f:
-        manifest = json.load(f)
 
-    logger.info(f"Loaded manifest with {len(manifest)} entries.")
+def main():
+    manifest: list[dict]
+    if MANIFEST_FILE.exists():
+        with open(MANIFEST_FILE, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+        if manifest:
+            logger.info(f"Loaded manifest with {len(manifest)} entries.")
+        else:
+            logger.warning(
+                "Manifest exists but is empty. Falling back to DOCUMENTS metadata."
+            )
+            manifest = build_manifest_from_documents()
+    else:
+        logger.warning(
+            f"Manifest not found: {MANIFEST_FILE}. Falling back to DOCUMENTS metadata."
+        )
+        manifest = build_manifest_from_documents()
+
+    logger.info(f"Using {len(manifest)} publication metadata entries.")
 
     all_chunks: list[dict] = []
     processed = 0

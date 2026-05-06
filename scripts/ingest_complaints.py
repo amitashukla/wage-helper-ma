@@ -1,29 +1,30 @@
 """Phase 1E — Ingest complaints CSV, build employer index, load into Postgres.
 
+Vectorized implementation: no iterrows. Uses pandas string ops + numpy for
+violation flag extraction, and SQLAlchemy Core bulk insert for DB writes.
+
 Usage:
     python scripts/ingest_complaints.py
 """
 
 import json
+import os
 import re
 import sys
-from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import insert
 
-# Ensure project root is on sys.path so we can import backend modules
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.db.connection import engine  # noqa: E402
 from backend.db.models import Base, Complaint  # noqa: E402
 
 load_dotenv(PROJECT_ROOT / ".env")
-
-import os  # noqa: E402
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
@@ -32,7 +33,6 @@ PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 EMPLOYER_INDEX_PATH = PROCESSED_DIR / "employer_index.json"
 COMPLAINTS_JSON_PATH = PROCESSED_DIR / "complaints.json"
 
-# Violation type columns in the CSV (boolean-ish flags)
 VIOLATION_COLUMNS = [
     "Minimum Wage",
     "Tips",
@@ -58,61 +58,81 @@ VIOLATION_COLUMNS = [
     "Minor Unsupervised after 8pm",
 ]
 
-# Abbreviation expansions for employer name normalization
-ABBREVIATIONS = {
-    r"\binc\b": "incorporated",
-    r"\bllc\b": "limited liability company",
-    r"\bcorp\b": "corporation",
-    r"\bco\b": "company",
-    r"\bltd\b": "limited",
-    r"\bdba\b": "doing business as",
+_COMPLAINT_TYPE_MAP = {
+    "child labor/youth employment": "Child Labor/Youth Employment",
+    "child labor / youth employment": "Child Labor/Youth Employment",
+    "non-payment of wage": "Non-Payment of Wage",
+    "prevailing wage": "Prevailing Wage",
 }
 
+# Abbreviation pairs applied in order (order matters: longer patterns first)
+_ABBREV_PAIRS = [
+    (r"\bd/b/a\b", "doing business as"),
+    (r"\bllc\b", "limited liability company"),
+    (r"\binc\b", "incorporated"),
+    (r"\bcorp\b", "corporation"),
+    (r"\bltd\b", "limited"),
+    (r"\bco\b", "company"),
+    (r"\bdba\b", "doing business as"),
+]
+
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Vectorized helpers
 # ---------------------------------------------------------------------------
 
 
-def normalize_employer_name(name: str) -> str:
-    """Normalize an employer name for fuzzy matching.
-
-    Steps: strip, lowercase, remove punctuation, expand abbreviations.
-    """
-    if not name or not isinstance(name, str):
-        return ""
-    n = name.strip().lower()
-    # Remove punctuation (keep alphanumeric and spaces)
-    n = re.sub(r"[^\w\s]", "", n)
-    # Collapse multiple spaces
-    n = re.sub(r"\s+", " ", n).strip()
-    # Expand abbreviations
-    for pattern, replacement in ABBREVIATIONS.items():
-        n = re.sub(pattern, replacement, n)
-    return n.strip()
+def normalize_employer_series(s: pd.Series) -> pd.Series:
+    """Vectorized employer name normalization."""
+    out = s.fillna("").str.strip().str.lower()
+    out = out.str.replace(r"[^\w\s]", "", regex=True)
+    out = out.str.replace(r"\s+", " ", regex=True).str.strip()
+    for pattern, replacement in _ABBREV_PAIRS:
+        out = out.str.replace(pattern, replacement, regex=True)
+    return out
 
 
-def is_violation_flag_active(value) -> bool:
-    """Determine if a violation column value indicates 'yes'."""
-    if pd.isna(value):
-        return False
-    v = str(value).strip().lower()
-    return v in ("yes", "y", "1", "true", "x")
+def normalize_str_series(s: pd.Series) -> pd.Series:
+    """Strip whitespace and replace empty/'nan' with None-equivalent empty string."""
+    cleaned = s.fillna("").str.strip()
+    cleaned = cleaned.where(cleaned.str.lower() != "nan", "")
+    return cleaned
 
 
-def get_active_violations(row: pd.Series) -> list[str]:
-    """Return list of violation type names that are flagged active for this row."""
-    return [col for col in VIOLATION_COLUMNS if is_violation_flag_active(row.get(col))]
+def extract_violation_lists(df: pd.DataFrame) -> list[list[str]]:
+    """Return a list of active violation column names per row, fully vectorized."""
+    active_values = {"yes", "y", "1", "true", "x"}
+    # Build boolean matrix: (n_rows, n_violation_cols)
+    present_cols = [c for c in VIOLATION_COLUMNS if c in df.columns]
+    if not present_cols:
+        return [[] for _ in range(len(df))]
+
+    bool_matrix = (
+        df[present_cols]
+        .fillna("")
+        .apply(lambda col: col.str.strip().str.lower().isin(active_values))
+        .to_numpy()
+    )
+    col_names = np.array(present_cols)
+    return [col_names[row].tolist() for row in bool_matrix]
 
 
-def parse_date(date_str) -> datetime | None:
-    """Parse a date string from the CSV (various formats)."""
-    if pd.isna(date_str) or not str(date_str).strip():
-        return None
-    try:
-        return pd.to_datetime(str(date_str).strip(), format="mixed").to_pydatetime()
-    except Exception:
-        return None
+def build_employer_index(raw_series: pd.Series, norm_series: pd.Series) -> dict:
+    """Build {normalized_name: {original_names, row_ids}} using groupby."""
+    tmp = pd.DataFrame({
+        "raw": raw_series.fillna("").str.strip(),
+        "norm": norm_series,
+        "row_id": raw_series.index,
+    })
+    tmp = tmp[tmp["norm"] != ""]
+
+    index = {}
+    for norm, group in tmp.groupby("norm", sort=False):
+        index[norm] = {
+            "original_names": group["raw"].unique().tolist(),
+            "row_ids": group["row_id"].tolist(),
+        }
+    return index
 
 
 # ---------------------------------------------------------------------------
@@ -120,111 +140,84 @@ def parse_date(date_str) -> datetime | None:
 # ---------------------------------------------------------------------------
 
 
-def build_employer_index(df: pd.DataFrame) -> dict:
-    """Build deduplicated employer name lookup table.
-
-    Returns:
-        {normalized_name: {"original_names": [...], "row_ids": [...]}}
-    """
-    index: dict[str, dict] = {}
-
-    for idx, row in df.iterrows():
-        raw_name = str(row.get("Employer Name", "")).strip()
-        if not raw_name:
-            continue
-        norm = normalize_employer_name(raw_name)
-        if not norm:
-            continue
-
-        if norm not in index:
-            index[norm] = {"original_names": [], "row_ids": []}
-
-        if raw_name not in index[norm]["original_names"]:
-            index[norm]["original_names"].append(raw_name)
-        index[norm]["row_ids"].append(int(idx))
-
-    return index
-
-
 def ingest_complaints(path: Path = RAW_PATH) -> None:
-    """Load complaints CSV, normalize, build employer index, and store in Postgres.
-
-    Outputs:
-        - data/processed/employer_index.json
-        - data/processed/complaints.json
-        - Postgres table: complaints
-    """
-    print(f"Loading complaints from {path} ...")
-    df = pd.read_csv(path, dtype=str)
+    print(f"Loading {path} ...")
+    df = pd.read_csv(path, dtype=str, encoding="cp1252")
     df.columns = df.columns.str.strip()
-    print(f"  Loaded {len(df):,} rows")
+    print(f"  {len(df):,} rows loaded")
 
-    # Build employer index
+    # --- Vectorized field prep ---
+    print("Normalizing fields ...")
+    df["emp_raw"] = normalize_str_series(df["Employer Name"])
+    df["emp_norm"] = normalize_employer_series(df["Employer Name"])
+    df["city"] = normalize_str_series(df.get("Employer City", pd.Series("", index=df.index)))
+    df["state"] = normalize_str_series(df.get("Employer State", pd.Series("", index=df.index)))
+    df["zip_"] = normalize_str_series(df.get("Employer Zip Code", pd.Series("", index=df.index)))
+    df["industry_"] = normalize_str_series(df.get("Industry", pd.Series("", index=df.index)))
+    df["number_"] = normalize_str_series(df.get("Number", pd.Series("", index=df.index)))
+
+    raw_ct = normalize_str_series(df.get("Complaint Type", pd.Series("", index=df.index)))
+    df["complaint_type_"] = raw_ct.str.lower().map(_COMPLAINT_TYPE_MAP).fillna(raw_ct)
+    df["complaint_type_"] = df["complaint_type_"].where(
+        df["complaint_type_"].notna() & (df["complaint_type_"] != ""), None
+    )
+
+    dates_parsed = pd.to_datetime(df.get("Received Date", pd.Series("", index=df.index)).str.strip(), format="mixed", errors="coerce")
+    df["received_date_"] = dates_parsed
+
+    # --- Violation lists ---
+    print("Extracting violation flags ...")
+    violation_lists = extract_violation_lists(df)
+
+    # --- Employer index ---
     print("Building employer index ...")
-    employer_index = build_employer_index(df)
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    with open(EMPLOYER_INDEX_PATH, "w") as f:
-        json.dump(employer_index, f, indent=2)
-    print(f"  Saved employer index ({len(employer_index):,} unique normalized names) -> {EMPLOYER_INDEX_PATH}")
+    employer_index = build_employer_index(df["Employer Name"], df["emp_norm"])
+    with open(EMPLOYER_INDEX_PATH, "w", encoding="utf-8") as f:
+        json.dump(employer_index, f)
+    print(f"  {len(employer_index):,} unique normalized employers -> {EMPLOYER_INDEX_PATH}")
 
-    # Build processed complaint records
-    print("Processing complaint records ...")
-    records = []
-    for idx, row in df.iterrows():
-        employer_raw = str(row.get("Employer Name", "")).strip()
-        record = {
-            "row_id": int(idx),
-            "received_date": str(row.get("Received Date", "")).strip() or None,
-            "employer_name": employer_raw,
-            "employer_name_normalized": normalize_employer_name(employer_raw),
-            "employer_city": str(row.get("Employer City", "")).strip() or None,
-            "employer_state": str(row.get("Employer State", "")).strip() or None,
-            "employer_zip": str(row.get("Employer Zip Code", "")).strip() or None,
-            "industry": str(row.get("Industry", "")).strip() or None,
-            "complaint_type": str(row.get("Complaint Type", "")).strip() or None,
-            "violation_types": get_active_violations(row),
-            "number": str(row.get("Number", "")).strip() or None,
+    # --- Build records list (one pass, no iterrows) ---
+    print("Building records ...")
+
+    def _none(val):
+        return None if (val == "" or (isinstance(val, float) and np.isnan(val))) else val
+
+    iter_cols = ["emp_raw", "emp_norm", "city", "state", "zip_",
+                 "industry_", "complaint_type_", "received_date_", "number_"]
+    records = [
+        {
+            "received_date": None if pd.isna(row.received_date_) else row.received_date_.date(),
+            "employer_name": row.emp_raw or None,
+            "employer_name_normalized": row.emp_norm or None,
+            "employer_city": _none(row.city),
+            "employer_state": _none(row.state),
+            "employer_zip": _none(row.zip_),
+            "industry": _none(row.industry_),
+            "complaint_type": None if pd.isna(row.complaint_type_) else row.complaint_type_,
+            "violation_types": violation_lists[i],
+            "number": _none(row.number_),
         }
-        records.append(record)
+        for i, row in enumerate(df[iter_cols].itertuples(index=False))
+    ]
 
-    # Save processed JSON
-    with open(COMPLAINTS_JSON_PATH, "w") as f:
-        json.dump(records, f, indent=2)
-    print(f"  Saved {len(records):,} records -> {COMPLAINTS_JSON_PATH}")
+    # --- JSON output ---
+    json_records = [
+        {**r, "received_date": r["received_date"].isoformat() if r["received_date"] else None}
+        for r in records
+    ]
+    with open(COMPLAINTS_JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(json_records, f)
+    print(f"  {len(json_records):,} records -> {COMPLAINTS_JSON_PATH}")
 
-    # Load into Postgres
-    print("Connecting to Postgres ...")
-    engine = create_engine(DATABASE_URL)
-    Base.metadata.create_all(engine, tables=[Complaint.__table__])
-    Session = sessionmaker(bind=engine)
-    session = Session()
-
-    print("Inserting complaint records into database ...")
-    batch_size = 500
-    for i in range(0, len(records), batch_size):
-        batch = records[i : i + batch_size]
-        db_objects = []
-        for rec in batch:
-            obj = Complaint(
-                received_date=parse_date(rec["received_date"]),
-                employer_name=rec["employer_name"],
-                employer_name_normalized=rec["employer_name_normalized"],
-                employer_city=rec["employer_city"],
-                employer_state=rec["employer_state"],
-                employer_zip=rec["employer_zip"],
-                industry=rec["industry"],
-                complaint_type=rec["complaint_type"],
-                violation_types=rec["violation_types"],
-                number=rec["number"],
-            )
-            db_objects.append(obj)
-        session.bulk_save_objects(db_objects)
-        session.commit()
-        print(f"  Inserted batch {i // batch_size + 1} ({len(batch)} records)")
-
-    session.close()
-    engine.dispose()
-    print("Done. Complaints ingestion complete.")
+    # --- Postgres bulk insert via SQLAlchemy Core ---
+    print("Inserting into Postgres ...")
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(Complaint.__table__.delete())
+        conn.execute(insert(Complaint), records)
+    print(f"  Inserted {len(records):,} rows into complaints table.")
+    print("Done.")
 
 
 if __name__ == "__main__":

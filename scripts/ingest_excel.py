@@ -50,6 +50,26 @@ VIOLATION_CATEGORIES = {
 }
 
 
+def clean_str(value) -> str | None:
+    """Strip a CSV cell value; return None for empty/NaN/'nan'."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    s = str(value).strip()
+    return None if (not s or s.lower() == "nan") else s
+
+
+def parse_date(value) -> object:
+    """Parse a date value, returning None instead of NaT."""
+    s = clean_str(value)
+    if not s:
+        return None
+    try:
+        result = pd.to_datetime(s, format="mixed", errors="coerce")
+        return None if pd.isna(result) else result
+    except Exception:
+        return None
+
+
 def normalize_employer_name(name: str) -> str:
     """Normalize employer name: strip, lowercase, remove punctuation, expand abbreviations."""
     if not name or pd.isna(name):
@@ -105,7 +125,7 @@ def parse_int(value: str) -> int | None:
 
 def ingest_enforcements(path: Path = RAW_PATH) -> None:
     """Load enforcements CSV, normalize, and write to Postgres + JSON."""
-    df = pd.read_csv(path, dtype=str)
+    df = pd.read_csv(path, dtype=str, encoding="cp1252")
     df.columns = df.columns.str.strip()
 
     # Ensure output directory exists
@@ -114,39 +134,47 @@ def ingest_enforcements(path: Path = RAW_PATH) -> None:
     # Create tables if they don't exist
     Base.metadata.create_all(bind=engine)
 
-    records = []
+    db_records = []
+    json_records = []
     for _, row in df.iterrows():
-        record = CivilEnforcement(
-            date_issued=pd.to_datetime(
-                str(row.get("Date Issued", "")).strip(), format="mixed", errors="coerce"
-            ),
-            employer_raw=str(row.get("Employer", "")).strip(),
-            employer_normalized=normalize_employer_name(row.get("Employer", "")),
-            dba=str(row.get("DBA", "")).strip() or None,
-            individual=str(row.get("Individual", "")).strip() or None,
-            business_city=str(row.get("Business City", "")).strip() or None,
-            business_state=str(row.get("Business State", "")).strip() or None,
-            business_zipcode=str(row.get("Business ZipCode", "")).strip() or None,
-            citation_number=str(row.get("Citation #", "")).strip() or None,
-            violation_code=str(row.get("Violation", "")).strip() or None,
-            violation_description=str(row.get("Violation Description", "")).strip() or None,
-            violation_category=map_violation_category(row.get("Violation Description")),
-            intent=str(row.get("Intent", "")).strip() or None,
-            total_assessed=parse_currency(row.get("Total Assessed")),
-            case_paid_in_full=str(row.get("Case Paid in Full", "")).strip() or None,
-            num_employees=parse_int(row.get("# of Employees")),
-            industry=str(row.get("Industry", "")).strip() or None,
-        )
-        records.append(record)
+        employer_raw = clean_str(row.get("Employer")) or ""
+        date_issued = parse_date(row.get("Date Issued"))
+        violation_desc = clean_str(row.get("Violation Description"))
+        total_assessed = parse_currency(row.get("Total Assessed"))
+        num_employees = parse_int(row.get("# of Employees"))
+        fields = {
+            "date_issued": date_issued,
+            "employer_raw": employer_raw,
+            "employer_normalized": normalize_employer_name(employer_raw),
+            "dba": clean_str(row.get("DBA")),
+            "individual": clean_str(row.get("Individual")),
+            "business_city": clean_str(row.get("Business City")),
+            "business_state": clean_str(row.get("Business State")),
+            "business_zipcode": clean_str(row.get("Business ZipCode")),
+            "citation_number": clean_str(row.get("Citation #")),
+            "violation_code": clean_str(row.get("Violation")),
+            "violation_description": violation_desc,
+            "violation_category": map_violation_category(violation_desc),
+            "intent": clean_str(row.get("Intent")),
+            "total_assessed": total_assessed,
+            "case_paid_in_full": clean_str(row.get("Case Paid in Full")),
+            "num_employees": num_employees,
+            "industry": clean_str(row.get("Industry")),
+        }
+        db_records.append(CivilEnforcement(**fields))
+        json_records.append({
+            **fields,
+            "date_issued": date_issued.isoformat() if date_issued else None,
+            "total_assessed": float(total_assessed) if total_assessed is not None else None,
+        })
 
     # Write to Postgres
     session: Session = SessionLocal()
     try:
-        # Clear existing data and reload
         session.query(CivilEnforcement).delete()
-        session.add_all(records)
+        session.add_all(db_records)
         session.commit()
-        print(f"Inserted {len(records):,} rows into civil_enforcement table.")
+        print(f"Inserted {len(db_records):,} rows into civil_enforcement table.")
     except Exception:
         session.rollback()
         raise
@@ -154,28 +182,6 @@ def ingest_enforcements(path: Path = RAW_PATH) -> None:
         session.close()
 
     # Write processed JSON
-    json_records = []
-    for r in records:
-        json_records.append({
-            "date_issued": r.date_issued.isoformat() if r.date_issued else None,
-            "employer_raw": r.employer_raw,
-            "employer_normalized": r.employer_normalized,
-            "dba": r.dba,
-            "individual": r.individual,
-            "business_city": r.business_city,
-            "business_state": r.business_state,
-            "business_zipcode": r.business_zipcode,
-            "citation_number": r.citation_number,
-            "violation_code": r.violation_code,
-            "violation_description": r.violation_description,
-            "violation_category": r.violation_category,
-            "intent": r.intent,
-            "total_assessed": r.total_assessed,
-            "case_paid_in_full": r.case_paid_in_full,
-            "num_employees": r.num_employees,
-            "industry": r.industry,
-        })
-
     with open(PROCESSED_JSON, "w", encoding="utf-8") as f:
         json.dump(json_records, f, indent=2, ensure_ascii=False)
     print(f"Wrote {len(json_records):,} records to {PROCESSED_JSON}")

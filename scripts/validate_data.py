@@ -30,7 +30,7 @@ def validate_enforcements(path: Path = RAW_PATH) -> pd.DataFrame:
     Raises AssertionError with descriptive message if required columns are
     missing or renamed.
     """
-    df = pd.read_csv(path, dtype=str)
+    df = pd.read_csv(path, dtype=str, encoding="cp1252")
 
     # Strip whitespace from column names (CSV sometimes has trailing spaces)
     df.columns = df.columns.str.strip()
@@ -94,7 +94,7 @@ def validate_complaints(path: Path = COMPLAINTS_RAW_PATH) -> pd.DataFrame:
     Raises AssertionError with descriptive message if required columns are
     missing or renamed.
     """
-    df = pd.read_csv(path, dtype=str)
+    df = pd.read_csv(path, dtype=str, encoding="cp1252")
 
     # Strip whitespace from column names
     df.columns = df.columns.str.strip()
