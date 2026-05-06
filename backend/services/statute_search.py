@@ -102,12 +102,12 @@ def _load_corpus() -> tuple[list[dict], np.ndarray | None]:
 
 
 def _load_model():
-    """Load the sentence-transformers model. Returns None on failure."""
+    """Load the fastembed ONNX model. Returns None on failure."""
     try:
-        from sentence_transformers import SentenceTransformer  # local import to avoid slow startup if unused
+        from fastembed import TextEmbedding  # noqa: PLC0415
 
         logger.info("Loading embedding model: %s", _EMBEDDING_MODEL_NAME)
-        model = SentenceTransformer(_EMBEDDING_MODEL_NAME)
+        model = TextEmbedding(model_name=_EMBEDDING_MODEL_NAME)
         logger.info("Embedding model loaded.")
         return model
     except Exception as exc:  # noqa: BLE001
@@ -185,7 +185,7 @@ def search(query: str, top_k: int = 5) -> list[dict]:
     # ------------------------------------------------------------------
     # 2. Embed the query
     # ------------------------------------------------------------------
-    query_vec: np.ndarray = _model.encode(query, convert_to_numpy=True).astype(np.float32)
+    query_vec: np.ndarray = next(_model.embed([query])).astype(np.float32)
 
     # ------------------------------------------------------------------
     # 3. Cosine similarity

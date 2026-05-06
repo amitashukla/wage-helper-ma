@@ -88,17 +88,16 @@ _category_embeddings: np.ndarray | None = None  # shape (N, dim)
 
 
 def _load_model():
-    """Attempt to load the sentence-transformers model.  Returns the model or
-    None if the library is unavailable."""
+    """Attempt to load the fastembed ONNX model. Returns the model or None if unavailable."""
     try:
-        from sentence_transformers import SentenceTransformer  # type: ignore
+        from fastembed import TextEmbedding  # type: ignore
 
-        model = SentenceTransformer(EMBEDDING_MODEL)
+        model = TextEmbedding(model_name=EMBEDDING_MODEL)
         logger.info("violation_mapper: loaded embedding model '%s'", EMBEDDING_MODEL)
         return model
     except Exception as exc:  # ImportError or model-download failure
         logger.warning(
-            "violation_mapper: could not load sentence-transformers model '%s': %s. "
+            "violation_mapper: could not load fastembed model '%s': %s. "
             "map_violation() will always return unknown.",
             EMBEDDING_MODEL,
             exc,
@@ -122,9 +121,7 @@ def _initialise():
         return
 
     try:
-        _category_embeddings = _model.encode(
-            VIOLATION_CATEGORIES, convert_to_numpy=True, show_progress_bar=False
-        )
+        _category_embeddings = np.array(list(_model.embed(VIOLATION_CATEGORIES)))
         logger.info(
             "violation_mapper: embedded %d violation categories (dim=%d)",
             len(VIOLATION_CATEGORIES),
@@ -175,9 +172,7 @@ def map_violation(complaint_text: str) -> dict:
         return _UNKNOWN_RESULT
 
     try:
-        query_vec: np.ndarray = _model.encode(
-            complaint_text, convert_to_numpy=True, show_progress_bar=False
-        )
+        query_vec: np.ndarray = next(_model.embed([complaint_text]))
         scores = _cosine_similarity(query_vec, _category_embeddings)
 
         top_indices = np.argsort(scores)[::-1][:_TOP_K]
