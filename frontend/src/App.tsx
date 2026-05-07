@@ -8,7 +8,7 @@ import { InputHints } from './components/input/InputHints';
 import { SessionPill } from './components/session/SessionPill';
 import './App.css';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '';
+const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
 
 function buildSessionTags(session: ReturnType<typeof useSession>['sessionProfile']): string[] {
   const tags: string[] = [];
@@ -35,6 +35,12 @@ export default function App() {
     setIsLoading(true);
 
     try {
+      if (!API_BASE && !import.meta.env.DEV) {
+        throw new Error(
+          'VITE_API_URL is not set. Configure your frontend deployment to point to Railway backend.'
+        );
+      }
+
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

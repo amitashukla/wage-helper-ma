@@ -77,9 +77,9 @@ python scripts/ingest_csv.py
 
 **Backend:**
 ```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload
+cd /path/to/wage-helper-ma
+pip install -r backend/requirements.txt
+uvicorn backend.main:app --reload --port 8000
 ```
 
 **Frontend:**
@@ -87,6 +87,11 @@ uvicorn main:app --reload
 cd frontend
 npm install
 npm run dev
+```
+
+If backend runs on a non-default port in dev, set:
+```bash
+VITE_DEV_API_PROXY=http://localhost:8010 npm run dev
 ```
 
 ---
@@ -101,7 +106,7 @@ npm run dev
 
 **Frontend (Vercel):**
 - Build command: `npm run build`, output dir: `dist`
-- Set env var: `VITE_API_URL` to Railway backend URL
+- Set env var: `VITE_API_URL` to Railway backend URL (required in production)
 - Auto-deploys on push to `main`
 
 ---
