@@ -5,8 +5,13 @@ interface Props {
   citation: CitationBlockType;
 }
 
+function isStatuteSection(id: string): boolean {
+  return /^Section\d/i.test(id);
+}
+
 export function CitationBlock({ citation }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const isStatute = isStatuteSection(citation.section_id);
 
   return (
     <div className="citation-block">
@@ -15,10 +20,16 @@ export function CitationBlock({ citation }: Props) {
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
       >
-        <span className="citation-label">From MA General Laws Chapter 149</span>
-        <span className="citation-section">§ {citation.section_id}</span>
-        {citation.section_title && (
-          <span className="citation-title"> — {citation.section_title}</span>
+        {isStatute ? (
+          <>
+            <span className="citation-label">MA General Laws Ch. 149</span>
+            <span className="citation-section">{citation.section_id}</span>
+          </>
+        ) : (
+          <>
+            <span className="citation-label">AG Publication</span>
+            <span className="citation-section">{citation.section_id}</span>
+          </>
         )}
         <span className="citation-chevron">{expanded ? '▲' : '▼'}</span>
       </button>

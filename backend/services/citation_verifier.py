@@ -55,12 +55,22 @@ _VERBATIM_CHARS = 300
 # ---------------------------------------------------------------------------
 
 
+def _get_full_corpus() -> list[dict]:
+    """Return the full loaded statute corpus from statute_search (lazy)."""
+    try:
+        from backend.services.statute_search import _corpus_chunks
+        return [c for c in _corpus_chunks if c.get("source") == "statute"]
+    except Exception:
+        return []
+
+
 def verify(response_text: str, statute_chunks: list[dict]) -> dict:
-    """Verify statute citations in an LLM response against retrieved chunks.
+    """Verify statute citations in an LLM response against the full corpus.
 
     Args:
         response_text:  The raw LLM-generated reply.
-        statute_chunks: Chunks returned by statute_search (may be empty).
+        statute_chunks: Chunks returned by statute_search (used first;
+                        falls back to full corpus for broader lookup).
 
     Returns:
         {
@@ -82,8 +92,9 @@ def verify(response_text: str, statute_chunks: list[dict]) -> dict:
             "hallucinated_citations_removed": False,
         }
 
-    # Build lookup: section_id (normalised) -> chunk dict
-    chunk_index = _build_chunk_index(statute_chunks)
+    # Build lookup from retrieved chunks + full corpus for broader coverage
+    all_chunks = statute_chunks + _get_full_corpus()
+    chunk_index = _build_chunk_index(all_chunks)
 
     # Extract all cited sections from the response
     cited_sections = _extract_cited_sections(response_text)

@@ -205,22 +205,51 @@ def search(query: str, top_k: int = 5) -> list[dict]:
         return []
 
     # ------------------------------------------------------------------
-    # 5. Top-k sorted by score descending
+    # 5. Split by source and take top from each so statutes aren't
+    #    drowned out by publication chunks.
     # ------------------------------------------------------------------
-    sorted_local = above_threshold[np.argsort(-scores[above_threshold])]
-    top_local = sorted_local[:top_k]
+    statute_hits: list[tuple[int, float]] = []
+    publication_hits: list[tuple[int, float]] = []
+
+    for local_idx in above_threshold:
+        global_idx = candidate_indices[local_idx]
+        source = _corpus_chunks[global_idx].get("source", "statute")
+        score = float(scores[local_idx])
+        if source == "statute":
+            statute_hits.append((local_idx, score))
+        else:
+            publication_hits.append((local_idx, score))
+
+    statute_hits.sort(key=lambda x: x[1], reverse=True)
+    publication_hits.sort(key=lambda x: x[1], reverse=True)
+
+    # Guarantee at least 3 statute results when available
+    min_statutes = min(3, len(statute_hits))
+    remaining = top_k - min_statutes
+    merged: list[tuple[int, float]] = statute_hits[:min_statutes]
+    merged.extend(publication_hits[:remaining])
+    # Fill any remaining slots with more statutes
+    used = min_statutes
+    while len(merged) < top_k and used < len(statute_hits):
+        merged.append(statute_hits[used])
+        used += 1
+
+    merged.sort(key=lambda x: x[1], reverse=True)
 
     results: list[dict] = []
-    for local_idx in top_local:
+    for local_idx, score in merged:
         global_idx = candidate_indices[local_idx]
         chunk = _corpus_chunks[global_idx]
+        title = chunk.get("section_title") or chunk.get("title", "")
+        if title == "MyLegislature":
+            title = ""
         results.append(
             {
                 "section_id": chunk.get("section_id", ""),
-                "section_title": chunk.get("section_title") or chunk.get("title", ""),
+                "section_title": title,
                 "text": chunk.get("text", ""),
                 "tags": chunk.get("tags", []),
-                "score": float(scores[local_idx]),
+                "score": score,
                 "source": chunk.get("source", "statute"),
             }
         )

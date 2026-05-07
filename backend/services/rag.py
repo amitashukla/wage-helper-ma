@@ -71,6 +71,46 @@ def _build_session_summary(session: SessionProfile) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Citation block builder
+# ---------------------------------------------------------------------------
+
+_VERBATIM_CHARS = 400
+
+
+def _build_citation_blocks(chunks: list[dict]) -> list[dict]:
+    """Build citation blocks directly from retrieved chunks."""
+    blocks: list[dict] = []
+    seen: set[str] = set()
+
+    for chunk in chunks:
+        source = chunk.get("source", "statute")
+        section_id = chunk.get("section_id", "")
+        title = chunk.get("section_title", "")
+        text = chunk.get("text", "")[:_VERBATIM_CHARS]
+
+        if source == "statute" and section_id:
+            key = section_id
+            label = section_id
+        elif title:
+            key = title
+            label = title
+        else:
+            continue
+
+        if key in seen:
+            continue
+        seen.add(key)
+
+        blocks.append({
+            "section_id": label,
+            "section_title": title,
+            "verbatim_text": text,
+        })
+
+    return blocks
+
+
+# ---------------------------------------------------------------------------
 # Public orchestrator
 # ---------------------------------------------------------------------------
 
@@ -183,9 +223,11 @@ def orchestrate(user_message: str, session: SessionProfile) -> dict:
         return _make_fallback(_FALLBACK_LLM_UNAVAILABLE, session)
 
     # ------------------------------------------------------------------
-    # Step 7 — Citation verification
+    # Step 7 — Build citation blocks from retrieved chunks directly.
+    #          Also run the verifier to strip any hallucinated references.
     # ------------------------------------------------------------------
     verified = citation_verifier.verify(response_text, statute_results)
+    retrieved_citations = _build_citation_blocks(statute_results)
 
     # ------------------------------------------------------------------
     # Step 8 — Update session
@@ -210,9 +252,17 @@ def orchestrate(user_message: str, session: SessionProfile) -> dict:
     # ------------------------------------------------------------------
     # Step 9 — Return
     # ------------------------------------------------------------------
+    # Merge: verifier-matched citations first, then retrieved-chunk citations
+    seen_ids = {c["section_id"] for c in verified["citation_blocks"]}
+    merged_citations = list(verified["citation_blocks"])
+    for c in retrieved_citations:
+        if c["section_id"] not in seen_ids:
+            seen_ids.add(c["section_id"])
+            merged_citations.append(c)
+
     return {
         "answer": verified["response_text"],
-        "citation_blocks": verified["citation_blocks"],
+        "citation_blocks": merged_citations,
         "violation_category": top_violation_category,
         "employer_matches": [m["matched_employer"] for m in complaint_matches],
         "confidence_flag": confidence_flag,
